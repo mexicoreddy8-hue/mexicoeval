@@ -19,6 +19,7 @@ export default function Students() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [active, setActive] = useState<Group | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [site, setSite] = useState("all");
 
@@ -33,9 +34,10 @@ export default function Students() {
   const reload = useCallback(async () => {
     if (!SUPABASE_READY) return;
     try {
-      const [nextGroups, nextLocations] = await Promise.all([listGroups(), listLocations()]);
+      const [nextGroups, nextLocations, nextStudents] = await Promise.all([listGroups(), listLocations(), listStudents()]);
       setGroups(nextGroups);
       setLocations(nextLocations);
+      setAllStudents(nextStudents);
       setSite((current) => current === "all" || nextLocations.some((l) => l.name === current) ? current : "all");
       setForm((current) => ({
         ...current,
@@ -65,7 +67,13 @@ export default function Students() {
     if (locations.length === 0) { toast("Add a location before registering students", "alert-triangle"); return; }
     if (!form.site) { toast("Select a location", "alert-triangle"); return; }
     if (SUPABASE_READY) {
-      try { await createStudent({ ...form, group_id: active.id }); setStudents(await listStudents(active.id)); toast("Student registered"); }
+      try {
+        await createStudent({ ...form, group_id: active.id });
+        const [nextStudents, nextAllStudents] = await Promise.all([listStudents(active.id), listStudents()]);
+        setStudents(nextStudents);
+        setAllStudents(nextAllStudents);
+        toast("Student registered");
+      }
       catch { toast("Could not save", "alert-triangle"); }
     } else { toast("Connect Supabase to save", "info"); }
     setDAdd(false); setForm({ site: locations[0]?.name || "", slot: "10:00 AM" });
@@ -91,7 +99,9 @@ export default function Students() {
             idcard_url: r.idcard_url || null,
           });
         }
-        setStudents(await listStudents(active.id));
+        const [nextStudents, nextAllStudents] = await Promise.all([listStudents(active.id), listStudents()]);
+        setStudents(nextStudents);
+        setAllStudents(nextAllStudents);
       }
       setDImport(false);
     } catch { toast("Could not parse file", "alert-triangle"); }
@@ -99,16 +109,9 @@ export default function Students() {
 
   const filtered = site === "all" ? students : students.filter((s) => s.site === site);
   const hasLocations = locations.length > 0;
-  const studentCounts = groups.reduce<Record<string, Record<string, number>>>((acc, g) => {
-    acc[g.id] = {};
-    return acc;
-  }, {});
-  if (active) {
-    studentCounts[active.id] = students.reduce<Record<string, number>>((acc, s) => {
-      if (s.site) acc[s.site] = (acc[s.site] || 0) + 1;
-      return acc;
-    }, {});
-  }
+  const groupStudents = active ? allStudents.filter((s) => s.group_id === active.id).concat(students.filter((s) => !allStudents.some((a) => a.id === s.id))) : allStudents;
+  const countStudents = (groupId: string, locationName?: string) =>
+    groupStudents.filter((s) => s.group_id === groupId && (!locationName || s.site === locationName)).length;
   const openAddStudent = () => {
     if (!hasLocations) { toast("Add a location before registering students", "alert-triangle"); return; }
     setForm((current) => ({ ...current, site: current.site || locations[0].name, slot: current.slot || "10:00 AM" }));
@@ -141,12 +144,12 @@ export default function Students() {
                 action={<button className="btn btn-pri" onClick={() => setDGroup(true)}><Icon name="plus" size={16} /> New Group</button>} />
             ) : (
               <div className="tbl-wrap"><table className="tbl tbl-clickable">
-                <thead><tr><th>Assessment Date</th><th>Locations</th><th style={{ textAlign: "center" }}>Total</th><th></th></tr></thead>
+                <thead><tr><th>Assessment Date</th>{hasLocations ? locations.map((l) => <th key={l.id}>{l.name}</th>) : <th>Locations</th>}<th style={{ textAlign: "center" }}>Total</th><th></th></tr></thead>
                 <tbody>{groups.map((g) => (
                   <tr key={g.id} onClick={() => openGroup(g)}>
                     <td><b>{g.assessment_date}</b></td>
-                    <td>{hasLocations ? locations.map((l) => l.name).join(", ") : "No locations added"}</td>
-                    <td style={{ textAlign: "center" }}>{Object.values(studentCounts[g.id] || {}).reduce((a, b) => a + b, 0)}</td>
+                    {hasLocations ? locations.map((l) => <td key={l.id}>{countStudents(g.id, l.name)}</td>) : <td>No locations added</td>}
+                    <td style={{ textAlign: "center" }}>{countStudents(g.id)}</td>
                     <td><button className="btn btn-icon btn-xs btn-ghost" onClick={(e) => { e.stopPropagation(); }}><Icon name="pencil" size={14} /></button></td>
                   </tr>
                 ))}</tbody>

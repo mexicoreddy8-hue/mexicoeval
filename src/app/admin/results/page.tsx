@@ -36,6 +36,28 @@ export default function Results() {
   function toggle(id: string) {
     setChecked((c) => { const n = new Set(c); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
+  function exportCsv() {
+    const selected = groups.filter((g) => checked.size === 0 || checked.has(g.id));
+    if (selected.length === 0) { toast("No groups to export", "alert-triangle"); return; }
+    const headers = ["Assessment Date", ...locations.map((l) => l.name), "Total"];
+    const lines = [
+      headers,
+      ...selected.map((g) => [
+        g.assessment_date,
+        ...locations.map((l) => String(countStudents(g.id, l.name))),
+        String(countStudents(g.id)),
+      ]),
+    ];
+    const csv = lines.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `evaluahealth-results-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast(`Downloaded ${selected.length} group report${selected.length > 1 ? "s" : ""}`);
+  }
 
   const hasLocations = locations.length > 0;
   const countStudents = (groupId: string, locationName?: string) =>
@@ -47,7 +69,7 @@ export default function Results() {
         <div className="card">
           <div className="card-head">
             <div><h3>Assessment Groups</h3><div className="sub">Select groups to export. Reports show evaluator panels & timestamps — no scores.</div></div>
-            <button className="btn btn-pri" onClick={() => toast(checked.size ? `Exporting ${checked.size} group(s)` : "Select groups to export", checked.size ? "download" : "alert-triangle")}><Icon name="download" size={16} /> Export Reports</button>
+            <button className="btn btn-pri" onClick={exportCsv}><Icon name="download" size={16} /> Export Reports</button>
           </div>
           <div className="card-pad" style={{ padding: groups.length ? 0 : undefined }}>
             {groups.length === 0 ? (

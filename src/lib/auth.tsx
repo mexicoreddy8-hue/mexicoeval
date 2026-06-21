@@ -28,7 +28,7 @@ const Ctx = createContext<AuthCtx>({
 // Demo profile used when preview bypass is on (no supabase)
 const DEMO_ADMIN: Profile = {
   id: "demo-admin", full_name: "Admin Demo", email: "admin@evaluahealth.mx",
-  role: "admin", site: null, photo_url: null, phone: null, created_at: "",
+  role: "admin", site: null, active: true, photo_url: null, phone: null, created_at: "",
 };
 
 // Fixed demo accounts (offline preview mode). Only these credentials sign in.
@@ -37,14 +37,14 @@ const DEMO_USERS: Record<string, { password: string; profile: Profile }> = {
     password: "Admin@123",
     profile: {
       id: "demo-admin", full_name: "Carlos Mendoza", email: "admin@evaluahealth.mx",
-      role: "admin", site: null, photo_url: null, phone: null, created_at: "",
+      role: "admin", site: null, active: true, photo_url: null, phone: null, created_at: "",
     },
   },
   "evaluator@evaluahealth.mx": {
     password: "Eval@123",
     profile: {
       id: "demo-evaluator", full_name: "Dr. Maria Rodriguez", email: "evaluator@evaluahealth.mx",
-      role: "evaluator", site: "Demo Site", photo_url: null, phone: null, created_at: "",
+      role: "evaluator", site: "Demo Site", active: true, photo_url: null, phone: null, created_at: "",
     },
   },
 };
@@ -55,7 +55,7 @@ function fallbackProfile(user: User): Profile {
   return {
     id: user.id, full_name: "", email: user.email || "",
     role: (user.email || "").toLowerCase().includes("admin") ? "admin" : "evaluator",
-    site: null, photo_url: null, phone: null, created_at: "",
+    site: null, active: true, photo_url: null, phone: null, created_at: "",
   };
 }
 
@@ -84,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!session?.user) { setProfile(null); setLoading(false); return; }
     const next = await loadProfileForUser(session.user);
     if (requestId !== activeLoad.current) return;
-    setProfile(next);
+    setProfile(next.active === false ? null : next);
     setLoading(false);
   }, [loadProfileForUser]);
 
@@ -96,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: sub } = sb.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (session?.user) {
         loadProfileForUser(session.user).then((next) => {
-          setProfile(next);
+          setProfile(next.active === false ? null : next);
           setLoading(false);
         });
       } else {
@@ -122,6 +122,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const user = data.user || data.session?.user;
     if (!user) return { error: "Sign-in failed" };
     const next = await loadProfileForUser(user);
+    if (next.active === false) {
+      await sb.auth.signOut();
+      profileCache.delete(user.id);
+      setProfile(null);
+      setLoading(false);
+      return { error: "This account is disabled. Contact an administrator." };
+    }
     setProfile(next);
     setLoading(false);
     return { role: next.role };

@@ -6,6 +6,7 @@ export interface Profile {
   email: string;
   role: Role;
   site: string | null;
+  active: boolean;
   photo_url: string | null;
   phone: string | null;
   created_at: string;

@@ -63,8 +63,24 @@ export default function Cases() {
     }
     setDBatch(false);
   }
+  function ensureBatchForCases() {
+    if (editBatch) return true;
+    if (!bDate) { setBErr("Select an assessment date from Students."); return false; }
+    if (!groups.some((g) => g.assessment_date === bDate)) { setBErr("This date must exist in Students first."); return false; }
+    const existing = batches.find((b) => b.date === bDate);
+    if (existing) {
+      setEditBatch(existing);
+      return true;
+    }
+    const nb: DraftBatch = { id: crypto.randomUUID(), date: bDate, cases: [] };
+    setBatches((bs) => [...bs, nb].sort(byDate));
+    setEditBatch(nb);
+    toast("Batch created — add cases");
+    return true;
+  }
 
   function openNewCase() {
+    if (!ensureBatchForCases()) return;
     setCaseName(""); setCaseDesc(""); setDraftQs([]); setQTitle(""); setQType("rubric");
     setDCase(true);
   }
@@ -129,13 +145,15 @@ export default function Cases() {
           </select>
           {bErr && <div style={{ color: "#e11d48", fontSize: 12, fontWeight: 700, marginTop: 6 }}>{bErr}</div>}
         </div>
-        {editBatch && (
+        {(editBatch || bDate) && (
           <div style={{ marginTop: 18 }}>
             <div className="between" style={{ marginBottom: 12 }}>
               <h4 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>Cases in this batch</h4>
               <button className="btn btn-sm btn-pri" onClick={openNewCase}><Icon name="plus" size={14} /> Add Case</button>
             </div>
-            {editBatch.cases.length === 0 ? (
+            {!editBatch ? (
+              <div className="empty-sm">Select a date, then add cases and questions here.</div>
+            ) : editBatch.cases.length === 0 ? (
               <div className="empty-sm">No cases yet. Add one above.</div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

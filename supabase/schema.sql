@@ -16,6 +16,7 @@ create table if not exists public.profiles (
   email       text not null default '',
   role        text not null default 'evaluator' check (role in ('admin','evaluator')),
   site        text,                       -- evaluator site scope (location code)
+  active      boolean not null default true,
   photo_url   text,
   phone       text,
   created_at  timestamptz not null default now()
@@ -119,6 +120,8 @@ create table if not exists public.notifications (
   read       boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+alter table public.profiles add column if not exists active boolean not null default true;
 
 -- ============================================================
 -- handle_new_user trigger -> auto-create profile

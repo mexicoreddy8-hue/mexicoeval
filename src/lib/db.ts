@@ -179,6 +179,11 @@ export async function listEvaluators(): Promise<Profile[]> {
     return (data as Profile[]) || [];
   });
 }
+export async function updateProfile(id: string, p: Partial<Profile>) {
+  const { error } = await sb().from("profiles").update(p).eq("id", id);
+  clearCache("profiles");
+  if (error) throw error;
+}
 
 /* ---------------- Evaluations ---------------- */
 export async function listEvaluations(): Promise<Evaluation[]> {
