@@ -1,12 +1,13 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import Icon from "@/components/Icon";
 import EmptyState from "@/components/EmptyState";
 import Drawer from "@/components/Drawer";
-import DateField from "@/components/DateField";
 import { useToast } from "@/components/Toast";
-import { RUBRIC_LEVELS, type QuestionType } from "@/lib/types";
+import { SUPABASE_READY } from "@/lib/supabase";
+import { listGroups } from "@/lib/db";
+import { RUBRIC_LEVELS, type Group, type QuestionType } from "@/lib/types";
 
 interface DraftQ { id: string; title: string; type: QuestionType }
 interface DraftCase { id: string; name: string; desc: string; questions: DraftQ[] }
@@ -16,6 +17,7 @@ const PILLS = ["#2563EB", "#7c3aed", "#0d9488"];
 
 export default function Cases() {
   const toast = useToast();
+  const [groups, setGroups] = useState<Group[]>([]);
   const [batches, setBatches] = useState<DraftBatch[]>([]);
   const [dBatch, setDBatch] = useState(false);
   const [editBatch, setEditBatch] = useState<DraftBatch | null>(null);
@@ -29,11 +31,26 @@ export default function Cases() {
   const [qType, setQType] = useState<QuestionType>("rubric");
   const [qTitle, setQTitle] = useState("");
 
-  function openNewBatch() { setEditBatch(null); setBDate(""); setBErr(""); setDBatch(true); }
+  useEffect(() => {
+    if (!SUPABASE_READY) return;
+    listGroups().then(setGroups).catch(() => setGroups([]));
+  }, []);
+
+  const hasGroups = groups.length > 0;
+
+  function openNewBatch() {
+    if (!hasGroups) {
+      toast("Create an assessment group in Students first", "alert-triangle");
+      return;
+    }
+    setEditBatch(null); setBDate(groups[0]?.assessment_date || ""); setBErr(""); setDBatch(true);
+  }
   function openBatch(b: DraftBatch) { setEditBatch(b); setBDate(b.date); setBErr(""); setDBatch(true); }
 
   function saveBatch() {
-    if (!bDate) { setBErr("Please select an assessment date."); return; }
+    if (!bDate) { setBErr("Select an assessment date from Students."); return; }
+    if (!groups.some((g) => g.assessment_date === bDate)) { setBErr("This date must exist in Students first."); return; }
+    if (!editBatch && batches.some((b) => b.date === bDate)) { setBErr("A case batch already exists for this date."); return; }
     setBErr("");
     if (editBatch) {
       setBatches((bs) => bs.map((b) => b.id === editBatch.id ? { ...b, date: bDate } : b).sort(byDate));
@@ -73,9 +90,12 @@ export default function Cases() {
           <button className="btn btn-pri" onClick={openNewBatch}><Icon name="plus" size={16} /> Add Batch</button>
         </div>
         <div className="card-pad" style={{ padding: batches.length ? 0 : undefined }}>
-          {batches.length === 0 ? (
+          {!hasGroups ? (
+            <EmptyState icon="calendar" title="No assessment dates yet"
+              text="Create an assessment group in Students first. Case batches can only use those existing dates." />
+          ) : batches.length === 0 ? (
             <EmptyState icon="layers" title="No case batches yet"
-              text="Create a batch for an assessment date, then add cases and their rubric questions."
+              text="Select an existing assessment date from Students, then add cases and their rubric questions."
               action={<button className="btn btn-pri" onClick={openNewBatch}><Icon name="plus" size={16} /> Add Batch</button>} />
           ) : (
             <div className="tbl-wrap"><table className="tbl tbl-clickable">
@@ -99,7 +119,16 @@ export default function Cases() {
         title={editBatch ? `Assessment ${editBatch.date || ""}` : "New Case Batch"}
         sub="A batch groups the cases evaluated on one assessment date"
         footer={<><button className="btn btn-ghost" onClick={() => setDBatch(false)}>Close</button><button className="btn btn-pri" onClick={saveBatch}>{editBatch ? "Save" : "Create Batch"}</button></>}>
-        <DateField label="Assessment Date" value={bDate} onChange={(v) => { setBDate(v); if (v) setBErr(""); }} error={bErr} />
+        <div className="field">
+          <label>Assessment Date</label>
+          <select className="select" value={bDate} onChange={(e) => { setBDate(e.target.value); if (e.target.value) setBErr(""); }}>
+            <option value="" disabled>Select a date from Students...</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.assessment_date}>{g.assessment_date}</option>
+            ))}
+          </select>
+          {bErr && <div style={{ color: "#e11d48", fontSize: 12, fontWeight: 700, marginTop: 6 }}>{bErr}</div>}
+        </div>
         {editBatch && (
           <div style={{ marginTop: 18 }}>
             <div className="between" style={{ marginBottom: 12 }}>
