@@ -1,6 +1,7 @@
 "use client";
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { getSupabase, SUPABASE_READY } from "./supabase";
 import type { Profile, Role } from "./types";
 
@@ -48,33 +49,63 @@ const DEMO_USERS: Record<string, { password: string; profile: Profile }> = {
   },
 };
 
+const profileCache = new Map<string, Profile>();
+
+function fallbackProfile(user: User): Profile {
+  return {
+    id: user.id, full_name: "", email: user.email || "",
+    role: (user.email || "").toLowerCase().includes("admin") ? "admin" : "evaluator",
+    site: null, photo_url: null, phone: null, created_at: "",
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const activeLoad = useRef(0);
+
+  const loadProfileForUser = useCallback(async (user: User) => {
+    const cached = profileCache.get(user.id);
+    if (cached) return cached;
+    const sb = getSupabase();
+    if (!sb) return fallbackProfile(user);
+    const { data } = await sb.from("profiles").select("*").eq("id", user.id).maybeSingle();
+    const next = data ? data as Profile : fallbackProfile(user);
+    profileCache.set(user.id, next);
+    return next;
+  }, []);
 
   const loadProfile = useCallback(async () => {
+    const requestId = ++activeLoad.current;
     const sb = getSupabase();
     if (!sb) { setLoading(false); return; }
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) { setProfile(null); setLoading(false); return; }
-    const { data } = await sb.from("profiles").select("*").eq("id", user.id).single();
-    if (data) setProfile(data as Profile);
-    else setProfile({
-      id: user.id, full_name: "", email: user.email || "",
-      role: (user.email || "").toLowerCase().includes("admin") ? "admin" : "evaluator",
-      site: null, photo_url: null, phone: null, created_at: "",
-    });
+    const { data: { session } } = await sb.auth.getSession();
+    if (requestId !== activeLoad.current) return;
+    if (!session?.user) { setProfile(null); setLoading(false); return; }
+    const next = await loadProfileForUser(session.user);
+    if (requestId !== activeLoad.current) return;
+    setProfile(next);
     setLoading(false);
-  }, []);
+  }, [loadProfileForUser]);
 
   useEffect(() => {
     if (PREVIEW_BYPASS) { setProfile(DEMO_ADMIN); setLoading(false); return; }
     loadProfile();
     const sb = getSupabase();
     if (!sb) return;
-    const { data: sub } = sb.auth.onAuthStateChange(() => loadProfile());
+    const { data: sub } = sb.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      if (session?.user) {
+        loadProfileForUser(session.user).then((next) => {
+          setProfile(next);
+          setLoading(false);
+        });
+      } else {
+        setProfile(null);
+        setLoading(false);
+      }
+    });
     return () => sub.subscription.unsubscribe();
-  }, [loadProfile]);
+  }, [loadProfile, loadProfileForUser]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (PREVIEW_BYPASS) {
@@ -86,20 +117,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const sb = getSupabase();
     if (!sb) return { error: "Supabase not configured" };
-    const { error } = await sb.auth.signInWithPassword({ email, password });
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
-    const { data: { user } } = await sb.auth.getUser();
+    const user = data.user || data.session?.user;
     if (!user) return { error: "Sign-in failed" };
-    const { data } = await sb.from("profiles").select("*").eq("id", user.id).single();
-    const role: Role = (data?.role as Role) ||
-      ((user.email || "").toLowerCase().includes("admin") ? "admin" : "evaluator");
-    if (data) setProfile(data as Profile);
-    return { role };
-  }, []);
+    const next = await loadProfileForUser(user);
+    setProfile(next);
+    setLoading(false);
+    return { role: next.role };
+  }, [loadProfileForUser]);
 
   const signOut = useCallback(async () => {
     const sb = getSupabase();
     if (sb) await sb.auth.signOut();
+    profileCache.clear();
     setProfile(null);
   }, []);
 

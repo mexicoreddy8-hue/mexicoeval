@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Icon from "@/components/Icon";
@@ -13,6 +13,11 @@ export default function Login() {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+
+  useEffect(() => {
+    router.prefetch("/admin/dashboard");
+    router.prefetch("/evaluator/dashboard");
+  }, [router]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
