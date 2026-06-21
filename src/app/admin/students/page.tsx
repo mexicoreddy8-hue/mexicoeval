@@ -118,6 +118,13 @@ export default function Students() {
     if (!hasLocations) { toast("Add a location before importing students", "alert-triangle"); return; }
     setDImport(true);
   };
+  const showIdCard = (student: Student) => {
+    if (!student.idcard_url) {
+      toast("No ID card uploaded for this student", "alert-triangle");
+      return;
+    }
+    window.open(student.idcard_url, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <Shell portal="admin" title="Students" sub="Assessment groups, organized by date">
@@ -187,6 +194,9 @@ export default function Students() {
                   </div>
                 </div>
                 <div className="st-meta"><span className="slot-chip"><Icon name="map-pin" size={13} /> {s.site}</span><span className="slot-chip"><Icon name="clock" size={13} /> {s.slot}</span></div>
+                <button className="btn btn-sm btn-ghost" style={{ marginTop: 12 }} onClick={() => showIdCard(s)}>
+                  <Icon name="credit-card" size={14} /> Show ID Card
+                </button>
               </div>
             ))}</div>
           )}
