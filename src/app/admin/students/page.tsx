@@ -8,16 +8,10 @@ import DateField from "@/components/DateField";
 import FileDrop from "@/components/FileDrop";
 import { useToast } from "@/components/Toast";
 import { SUPABASE_READY } from "@/lib/supabase";
-import { listGroups, listStudents, createGroup, createStudent } from "@/lib/db";
-import type { Group, Student } from "@/lib/types";
+import { listGroups, listLocations, listStudents, createGroup, createStudent } from "@/lib/db";
+import type { Group, Location, Student } from "@/lib/types";
 import { parseStudentSheet } from "@/lib/importSheet";
 
-const SITES = [
-  { key: "all", label: "All Sites", color: "#2563EB" },
-  { key: "Mexico City", label: "Mexico City", color: "#2563EB" },
-  { key: "Guadalajara", label: "Guadalajara", color: "#7c3aed" },
-  { key: "Monterrey", label: "Monterrey", color: "#0d9488" },
-];
 const SLOTS = ["10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM", "12:00 PM"];
 
 export default function Students() {
@@ -25,6 +19,7 @@ export default function Students() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [active, setActive] = useState<Group | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
   const [site, setSite] = useState("all");
 
   const [dGroup, setDGroup] = useState(false);
@@ -33,11 +28,20 @@ export default function Students() {
 
   const [gDate, setGDate] = useState("");
   const [gErr, setGErr] = useState("");
-  const [form, setForm] = useState<Partial<Student>>({ site: "Mexico City", slot: "10:00 AM" });
+  const [form, setForm] = useState<Partial<Student>>({ site: "", slot: "10:00 AM" });
 
   const reload = useCallback(async () => {
     if (!SUPABASE_READY) return;
-    try { setGroups(await listGroups()); } catch { /* */ }
+    try {
+      const [nextGroups, nextLocations] = await Promise.all([listGroups(), listLocations()]);
+      setGroups(nextGroups);
+      setLocations(nextLocations);
+      setSite((current) => current === "all" || nextLocations.some((l) => l.name === current) ? current : "all");
+      setForm((current) => ({
+        ...current,
+        site: current.site && nextLocations.some((l) => l.name === current.site) ? current.site : nextLocations[0]?.name || "",
+      }));
+    } catch { /* */ }
   }, []);
   useEffect(() => { reload(); }, [reload]);
 
@@ -58,24 +62,30 @@ export default function Students() {
 
   async function saveStudent() {
     if (!form.name || !active) { toast("Name required", "alert-triangle"); return; }
+    if (locations.length === 0) { toast("Add a location before registering students", "alert-triangle"); return; }
+    if (!form.site) { toast("Select a location", "alert-triangle"); return; }
     if (SUPABASE_READY) {
       try { await createStudent({ ...form, group_id: active.id }); setStudents(await listStudents(active.id)); toast("Student registered"); }
       catch { toast("Could not save", "alert-triangle"); }
     } else { toast("Connect Supabase to save", "info"); }
-    setDAdd(false); setForm({ site: "Mexico City", slot: "10:00 AM" });
+    setDAdd(false); setForm({ site: locations[0]?.name || "", slot: "10:00 AM" });
   }
 
   async function onImport(file: File) {
+    if (locations.length === 0) { toast("Add a location before importing students", "alert-triangle"); return; }
     try {
       const rows = await parseStudentSheet(file);
       toast(`Parsed ${rows.length} rows`);
+      const siteNames = new Set(locations.map((l) => l.name));
+      const invalid = rows.find((r) => r.site && !siteNames.has(r.site));
+      if (invalid) { toast(`Unknown location: ${invalid.site}`, "alert-triangle"); return; }
       if (SUPABASE_READY && active) {
         for (const r of rows) {
           await createStudent({
             group_id: active.id,
             name: r.name,
             qrtexto: r.qrtexto,
-            site: r.site || "Mexico City",
+            site: r.site || locations[0].name,
             slot: r.slot || "10:00 AM",
             photo_url: r.photo_url || null,
             idcard_url: r.idcard_url || null,
@@ -88,6 +98,26 @@ export default function Students() {
   }
 
   const filtered = site === "all" ? students : students.filter((s) => s.site === site);
+  const hasLocations = locations.length > 0;
+  const studentCounts = groups.reduce<Record<string, Record<string, number>>>((acc, g) => {
+    acc[g.id] = {};
+    return acc;
+  }, {});
+  if (active) {
+    studentCounts[active.id] = students.reduce<Record<string, number>>((acc, s) => {
+      if (s.site) acc[s.site] = (acc[s.site] || 0) + 1;
+      return acc;
+    }, {});
+  }
+  const openAddStudent = () => {
+    if (!hasLocations) { toast("Add a location before registering students", "alert-triangle"); return; }
+    setForm((current) => ({ ...current, site: current.site || locations[0].name, slot: current.slot || "10:00 AM" }));
+    setDAdd(true);
+  };
+  const openImport = () => {
+    if (!hasLocations) { toast("Add a location before importing students", "alert-triangle"); return; }
+    setDImport(true);
+  };
 
   return (
     <Shell portal="admin" title="Students" sub="Assessment groups, organized by date">
@@ -104,11 +134,12 @@ export default function Students() {
                 action={<button className="btn btn-pri" onClick={() => setDGroup(true)}><Icon name="plus" size={16} /> New Group</button>} />
             ) : (
               <div className="tbl-wrap"><table className="tbl tbl-clickable">
-                <thead><tr><th>Assessment Date</th><th>Mexico City</th><th>Guadalajara</th><th>Monterrey</th><th style={{ textAlign: "center" }}>Total</th><th></th></tr></thead>
+                <thead><tr><th>Assessment Date</th><th>Locations</th><th style={{ textAlign: "center" }}>Total</th><th></th></tr></thead>
                 <tbody>{groups.map((g) => (
                   <tr key={g.id} onClick={() => openGroup(g)}>
                     <td><b>{g.assessment_date}</b></td>
-                    <td>0</td><td>0</td><td>0</td><td style={{ textAlign: "center" }}>0</td>
+                    <td>{hasLocations ? locations.map((l) => l.name).join(", ") : "No locations added"}</td>
+                    <td style={{ textAlign: "center" }}>{Object.values(studentCounts[g.id] || {}).reduce((a, b) => a + b, 0)}</td>
                     <td><button className="btn btn-icon btn-xs btn-ghost" onClick={(e) => { e.stopPropagation(); }}><Icon name="pencil" size={14} /></button></td>
                   </tr>
                 ))}</tbody>
@@ -124,20 +155,26 @@ export default function Students() {
           </div>
           <div className="card-head" style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 16, marginBottom: 16, flexWrap: "wrap" }}>
             <div className="tabs scroll-tabs">
-              {SITES.map((s) => (
-                <button key={s.key} className={`tab ${site === s.key ? "active" : ""}`} onClick={() => setSite(s.key)}>{s.label}</button>
+              <button className={`tab ${site === "all" ? "active" : ""}`} onClick={() => setSite("all")}>All Sites</button>
+              {locations.map((l) => (
+                <button key={l.id} className={`tab ${site === l.name ? "active" : ""}`} onClick={() => setSite(l.name)}>{l.name}</button>
               ))}
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <button className="btn btn-ghost" onClick={() => setDImport(true)}><Icon name="upload" size={16} /> Import</button>
-              <button className="btn btn-pri" onClick={() => setDAdd(true)}><Icon name="user-plus" size={16} /> Add Student</button>
+              <button className="btn btn-ghost" onClick={openImport}><Icon name="upload" size={16} /> Import</button>
+              <button className="btn btn-pri" onClick={openAddStudent}><Icon name="user-plus" size={16} /> Add Student</button>
             </div>
           </div>
-          {filtered.length === 0 ? (
+          {!hasLocations ? (
+            <div className="card"><div className="card-pad">
+              <EmptyState icon="map-pin" title="Add a location first"
+                text="Students can only be registered after at least one evaluation site is added in Locations." />
+            </div></div>
+          ) : filtered.length === 0 ? (
             <div className="card"><div className="card-pad">
               <EmptyState icon="users" title="No students in this group"
                 text="Register students individually or import a spreadsheet (xlsx, xls, csv)."
-                action={<button className="btn btn-pri" onClick={() => setDAdd(true)}><Icon name="user-plus" size={16} /> Add Student</button>} />
+                action={<button className="btn btn-pri" onClick={openAddStudent}><Icon name="user-plus" size={16} /> Add Student</button>} />
             </div></div>
           ) : (
             <div className="grid g-3">{filtered.map((s) => (
@@ -161,7 +198,7 @@ export default function Students() {
         sub="Groups are identified by assessment date"
         footer={<><button className="btn btn-ghost" onClick={() => setDGroup(false)}>Cancel</button><button className="btn btn-pri" onClick={saveGroup}>Create Group</button></>}>
         <DateField label="Assessment Date" value={gDate} onChange={(v) => { setGDate(v); if (v) setGErr(""); }} error={gErr} />
-        <div className="hint-box"><Icon name="info" size={16} /> A unique Group ID is generated automatically. Students within a group are organized by site and slot.</div>
+        <div className="hint-box"><Icon name="info" size={16} /> A unique Group ID is generated automatically. Students within a group are organized by added locations and slots.</div>
       </Drawer>
 
       {/* Add student drawer */}
@@ -177,7 +214,7 @@ export default function Students() {
           <div className="field"><label>QRTEXTO</label><input className="input" value={form.qrtexto || ""} onChange={(e) => setForm((f) => ({ ...f, qrtexto: e.target.value }))} /></div>
         </div>
         <div className="field-row">
-          <div className="field"><label>Sede</label><select className="select" value={form.site || ""} onChange={(e) => setForm((f) => ({ ...f, site: e.target.value }))}>{SITES.slice(1).map((s) => <option key={s.key}>{s.label}</option>)}</select></div>
+          <div className="field"><label>Sede</label><select className="select" value={form.site || ""} onChange={(e) => setForm((f) => ({ ...f, site: e.target.value }))}><option value="" disabled>Select a location...</option>{locations.map((l) => <option key={l.id}>{l.name}</option>)}</select></div>
           <div className="field"><label>Slot</label><select className="select" value={form.slot || ""} onChange={(e) => setForm((f) => ({ ...f, slot: e.target.value }))}>{SLOTS.map((s) => <option key={s}>{s}</option>)}</select></div>
         </div>
       </Drawer>
