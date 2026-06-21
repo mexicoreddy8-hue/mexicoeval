@@ -61,8 +61,8 @@ export default function Locations() {
 
       <Drawer open={open} onClose={() => setOpen(false)} title="Add Location" sub="Sites identify where evaluations happen"
         footer={<><button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button><button className="btn btn-pri" onClick={save}>Save Location</button></>}>
-        <div className="field"><label>Site Name</label><input className="input" value={form.name || ""} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Mexico City" /></div>
-        <div className="field"><label>Site Code</label><input className="input" value={form.code || ""} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} placeholder="e.g. MEX-01" /></div>
+        <div className="field"><label>Site Name</label><input className="input" value={form.name || ""} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Main Campus" /></div>
+        <div className="field"><label>Site Code</label><input className="input" value={form.code || ""} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} placeholder="e.g. SITE-01" /></div>
         <div className="field"><label>Color</label>
           <div style={{ display: "flex", gap: 10 }}>
             {COLORS.map((c) => (

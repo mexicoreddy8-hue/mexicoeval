@@ -5,32 +5,41 @@ import Icon from "@/components/Icon";
 import EmptyState from "@/components/EmptyState";
 import { useToast } from "@/components/Toast";
 import { SUPABASE_READY } from "@/lib/supabase";
-import { listGroups } from "@/lib/db";
-import type { Group } from "@/lib/types";
-
-const SITES = [
-  { key: "all", label: "All Sites" },
-  { key: "Mexico City", label: "Mexico City" },
-  { key: "Guadalajara", label: "Guadalajara" },
-  { key: "Monterrey", label: "Monterrey" },
-];
+import { listGroups, listLocations, listStudents } from "@/lib/db";
+import type { Group, Location, Student } from "@/lib/types";
 
 export default function Results() {
   const toast = useToast();
   const [groups, setGroups] = useState<Group[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [active, setActive] = useState<Group | null>(null);
   const [site, setSite] = useState("all");
   const [checked, setChecked] = useState<Set<string>>(new Set());
 
   const reload = useCallback(async () => {
     if (!SUPABASE_READY) return;
-    try { setGroups(await listGroups()); } catch { /* */ }
+    try {
+      const [nextGroups, nextLocations, nextStudents] = await Promise.all([
+        listGroups(),
+        listLocations(),
+        listStudents(),
+      ]);
+      setGroups(nextGroups);
+      setLocations(nextLocations);
+      setStudents(nextStudents);
+      setSite((current) => current === "all" || nextLocations.some((l) => l.name === current) ? current : "all");
+    } catch { /* */ }
   }, []);
   useEffect(() => { reload(); }, [reload]);
 
   function toggle(id: string) {
     setChecked((c) => { const n = new Set(c); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
+
+  const hasLocations = locations.length > 0;
+  const countStudents = (groupId: string, locationName?: string) =>
+    students.filter((s) => s.group_id === groupId && (!locationName || s.site === locationName)).length;
 
   return (
     <Shell portal="admin" title="Reports" sub="Submission tracking by assessment date">
@@ -46,11 +55,13 @@ export default function Results() {
                 text="Once evaluations are submitted, results appear here grouped by assessment date." />
             ) : (
               <div className="tbl-wrap"><table className="tbl tbl-clickable tbl-reports">
-                <thead><tr><th style={{ width: 36 }}></th><th>Assessment Date</th><th>Mexico City</th><th>Guadalajara</th><th>Monterrey</th><th style={{ textAlign: "center" }}>Total</th></tr></thead>
+                <thead><tr><th style={{ width: 36 }}></th><th>Assessment Date</th>{hasLocations ? locations.map((l) => <th key={l.id}>{l.name}</th>) : <th>Locations</th>}<th style={{ textAlign: "center" }}>Total</th></tr></thead>
                 <tbody>{groups.map((g) => (
                   <tr key={g.id} onClick={() => setActive(g)}>
                     <td onClick={(e) => e.stopPropagation()}><input type="checkbox" className="row-chk" checked={checked.has(g.id)} onChange={() => toggle(g.id)} /></td>
-                    <td><b>{g.assessment_date}</b></td><td>0</td><td>0</td><td>0</td><td style={{ textAlign: "center" }}>0</td>
+                    <td><b>{g.assessment_date}</b></td>
+                    {hasLocations ? locations.map((l) => <td key={l.id}>{countStudents(g.id, l.name)}</td>) : <td>No locations added</td>}
+                    <td style={{ textAlign: "center" }}>{countStudents(g.id)}</td>
                   </tr>
                 ))}</tbody>
               </table></div>
@@ -65,7 +76,8 @@ export default function Results() {
           </div>
           <div className="card-head" style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 16, marginBottom: 16, flexWrap: "wrap" }}>
             <div className="tabs scroll-tabs">
-              {SITES.map((s) => <button key={s.key} className={`tab ${site === s.key ? "active" : ""}`} onClick={() => setSite(s.key)}>{s.label}</button>)}
+              <button className={`tab ${site === "all" ? "active" : ""}`} onClick={() => setSite("all")}>All Sites</button>
+              {locations.map((l) => <button key={l.id} className={`tab ${site === l.name ? "active" : ""}`} onClick={() => setSite(l.name)}>{l.name}</button>)}
             </div>
           </div>
           <div className="card"><div className="card-pad">

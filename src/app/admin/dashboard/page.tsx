@@ -6,11 +6,11 @@ import EmptyState from "@/components/EmptyState";
 import { listLocations } from "@/lib/db";
 import type { Location } from "@/lib/types";
 
-const STATS = [
+const BASE_STATS = [
   { ic: "graduation-cap", tint: "tint-blue", lbl: "Total Students", val: 0 },
   { ic: "clipboard-check", tint: "tint-green", lbl: "Evaluations Done", val: 0 },
   { ic: "stethoscope", tint: "tint-violet", lbl: "Total Evaluators", val: 0 },
-  { ic: "map-pin", tint: "tint-teal", lbl: "Locations", val: 0 },
+  { ic: "map-pin", tint: "tint-teal", lbl: "Locations", val: "locations" },
 ];
 
 export default function Dashboard() {
@@ -22,6 +22,10 @@ export default function Dashboard() {
   }, []);
 
   const hasLocations = locations.length > 0;
+  const stats = BASE_STATS.map((s) => ({
+    ...s,
+    val: s.val === "locations" ? locations.length : s.val,
+  }));
 
   return (
     <Shell portal="admin" title="Dashboard" sub="Evaluation activity across all locations">
@@ -48,7 +52,7 @@ export default function Dashboard() {
 
       {/* Stat cards */}
       <div className="grid g-4" style={{ marginBottom: 18 }}>
-        {STATS.map((s) => (
+        {stats.map((s) => (
           <div className="stat" key={s.lbl}>
             <div className={`ic ${s.tint}`}><Icon name={s.ic} size={24} /></div>
             <div className="lbl">{s.lbl}</div>

@@ -43,7 +43,7 @@ const DEMO_USERS: Record<string, { password: string; profile: Profile }> = {
     password: "Eval@123",
     profile: {
       id: "demo-evaluator", full_name: "Dr. Maria Rodriguez", email: "evaluator@evaluahealth.mx",
-      role: "evaluator", site: "Guadalajara", photo_url: null, phone: null, created_at: "",
+      role: "evaluator", site: "Demo Site", photo_url: null, phone: null, created_at: "",
     },
   },
 };
